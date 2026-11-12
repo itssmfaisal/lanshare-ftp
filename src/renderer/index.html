@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+  <title>LanShare FTP</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="bg-blob b1"></div>
+  <div class="bg-blob b2"></div>
+  <div class="bg-blob b3"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+      </div>
+      <div>
+        <h1>LanShare <span>FTP</span></h1>
+        <p>Share files across your local network</p>
+      </div>
+    </div>
+    <div id="statusPill" class="status-pill off"><span class="dot"></span><span id="statusText">Offline</span></div>
+  </header>
+
+  <main class="grid">
+    <!-- Hero / power -->
+    <section class="card hero">
+      <div class="hero-left">
+        <button id="powerBtn" class="power" title="Start / stop server">
+          <span class="ring"></span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v9"/><path d="M6.3 6.3a8 8 0 1 0 11.4 0"/></svg>
+        </button>
+        <div class="hero-text">
+          <h2 id="heroTitle">Server is offline</h2>
+          <p id="heroSub">Press the button to start sharing your folder.</p>
+          <div id="uptime" class="uptime hidden">Uptime <b id="uptimeVal">00:00:00</b></div>
+        </div>
+      </div>
+
+      <div class="hero-right">
+        <div class="addr-label">Connect using</div>
+        <div id="addrList" class="addr-list"></div>
+        <p class="hint">Open this address in File Explorer, Finder, a file manager or any FTP client (FileZilla, etc.)</p>
+      </div>
+
+      <div class="qr-wrap">
+        <div class="qr" id="qrBox"><img id="qrImg" alt="" /><div class="qr-empty">QR</div></div>
+        <span>Scan on mobile</span>
+      </div>
+    </section>
+
+    <!-- Stats -->
+    <section class="stats">
+      <div class="stat card">
+        <div class="stat-icon violet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+        <div><div class="stat-val" id="stClients">0</div><div class="stat-lbl">Active clients</div></div>
+      </div>
+      <div class="stat card">
+        <div class="stat-icon cyan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg></div>
+        <div><div class="stat-val" id="stDown">0</div><div class="stat-lbl">Downloads · <span id="stOut">0 B</span></div></div>
+      </div>
+      <div class="stat card">
+        <div class="stat-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg></div>
+        <div><div class="stat-val" id="stUp">0</div><div class="stat-lbl">Uploads · <span id="stIn">0 B</span></div></div>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section class="card settings">
+      <div class="card-head">
+        <h3>Configuration</h3>
+        <span id="lockBadge" class="badge hidden">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Locked while running
+        </span>
+      </div>
+
+      <div class="field">
+        <span>Shared folder</span>
+        <div class="folder-row">
+          <div class="folder" id="folderPath" title="">—</div>
+          <button class="btn ghost" id="browseBtn">Browse</button>
+          <button class="btn icon" id="openBtn" title="Open folder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <label class="field">
+        <span>Port</span>
+        <input id="port" type="number" min="1" max="65535" />
+      </label>
+
+      <div class="toggle-row">
+        <div>
+          <div class="t-title">Anonymous access</div>
+          <div class="t-sub">Anyone on the network can connect without a password</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="anonymous" /><span></span></label>
+      </div>
+
+      <div id="credBox" class="cred">
+        <label class="field"><span>Username</span><input id="username" type="text" autocomplete="off" /></label>
+        <label class="field"><span>Password</span>
+          <div class="pw"><input id="password" type="password" autocomplete="off" />
+            <button class="eye" id="eyeBtn" type="button" title="Show password">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </label>
+      </div>
+
+      <div class="toggle-row">
+        <div>
+          <div class="t-title">Read-only</div>
+          <div class="t-sub">Clients can download but not upload, rename or delete</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="readOnly" /><span></span></label>
+      </div>
+    </section>
+
+    <!-- Clients -->
+    <section class="card clients">
+      <div class="card-head"><h3>Connected devices</h3><span class="count" id="clientCount">0</span></div>
+      <div id="clientList" class="client-list"></div>
+    </section>
+
+    <!-- Activity -->
+    <section class="card activity">
+      <div class="card-head"><h3>Activity</h3><button class="btn ghost sm" id="clearLog">Clear</button></div>
+      <div id="logList" class="log-list"></div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>
