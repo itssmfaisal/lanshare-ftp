@@ -10,6 +10,18 @@ A desktop FTP server with a clean dark UI for sharing a folder with other device
 - Live connected-device list, a download/upload counter, bytes transferred and an activity log
 - Passive mode replies with the right interface IP for each client's subnet
 - Settings are saved between runs
+- **Launch at system startup**: starts in the background (system tray) when you log in
+- **Start sharing automatically**: starts the server as soon as the app opens
+- A system tray icon to start or stop the server. While sharing, closing the window keeps the server running in the tray; use **Quit** in the tray menu to exit.
+
+### Auto-start details
+| OS | How it's registered |
+|---|---|
+| Windows | Login item in the registry (Task Manager → Startup apps) |
+| macOS | Login item (System Settings → General → Login Items) |
+| Linux | `~/.config/autostart/lanshare-ftp.desktop` |
+
+On Linux, enable this from the AppImage or `.deb` build, not `npm start`, so the entry points to the installed app. If you move the AppImage, open it once so it can update the entry.
 
 ## Run
 ```bash

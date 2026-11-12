@@ -1,6 +1,6 @@
 {
   "name": "lanshare-ftp",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Beautiful desktop FTP server for sharing files on your local network",
   "main": "src/main.js",
   "scripts": {

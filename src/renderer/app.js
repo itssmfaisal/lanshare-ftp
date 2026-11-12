@@ -59,6 +59,8 @@ function readForm() {
     username: $('username').value.trim(),
     password: $('password').value,
     readOnly: $('readOnly').checked,
+    launchAtStartup: $('launchAtStartup').checked,
+    autoStartServer: $('autoStartServer').checked,
   };
 }
 function fillForm() {
@@ -69,6 +71,8 @@ function fillForm() {
   $('username').value = settings.username;
   $('password').value = settings.password;
   $('readOnly').checked = settings.readOnly;
+  $('launchAtStartup').checked = settings.launchAtStartup;
+  $('autoStartServer').checked = settings.autoStartServer;
   updateCredVisibility();
 }
 function updateCredVisibility() {
@@ -238,6 +242,17 @@ async function init() {
   $('openBtn').addEventListener('click', () => window.api.openFolder(settings.root));
   $('anonymous').addEventListener('change', () => { updateCredVisibility(); persist(); });
   $('readOnly').addEventListener('change', persist);
+  $('launchAtStartup').addEventListener('change', async () => {
+    const want = $('launchAtStartup').checked;
+    await persist();
+    $('launchAtStartup').checked = settings.launchAtStartup;
+    if (settings.launchAtStartup === want) toast(want ? 'LanShare FTP will launch at startup' : 'Removed from startup');
+    else toast('Could not change the startup setting', true);
+  });
+  $('autoStartServer').addEventListener('change', async () => {
+    await persist();
+    toast(settings.autoStartServer ? 'Server will start automatically' : 'Auto-start turned off');
+  });
   ['port', 'username', 'password'].forEach((id) => $(id).addEventListener('change', persist));
   $('port').addEventListener('input', renderAddresses);
   $('eyeBtn').addEventListener('click', () => {
@@ -246,7 +261,12 @@ async function init() {
   });
   $('clearLog').addEventListener('click', clearLog);
 
-  window.api.onState((s) => { state = s; renderStats(); renderClients(); });
+  window.api.onState(async (s) => {
+    const changed = s.running !== state.running;
+    state = s;
+    if (changed) { settings = await window.api.getSettings(); render(); } // e.g. started from tray / auto-start
+    else { renderStats(); renderClients(); }
+  });
   window.api.onLog(addLog);
 
   // refresh "connected x min ago" and network interfaces periodically

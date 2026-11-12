@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -22,6 +22,8 @@ const defaultSettings = () => ({
   username: 'user',
   password: '',
   readOnly: false,
+  launchAtStartup: false,
+  autoStartServer: false,
 });
 function loadSettings() {
   try {
@@ -71,6 +73,7 @@ function log(type, message, extra = {}) {
 }
 function pushState() {
   send('ftp:state', getState());
+  updateTray();
 }
 function getState() {
   return {
@@ -216,7 +219,20 @@ async function stopServer() {
 
 // ---------- IPC ----------
 ipcMain.handle('settings:get', () => loadSettings());
-ipcMain.handle('settings:save', (_e, s) => { saveSettings({ ...loadSettings(), ...s }); return loadSettings(); });
+ipcMain.handle('settings:save', (_e, s) => {
+  const prev = loadSettings();
+  const next = { ...prev, ...s };
+  if (next.launchAtStartup !== prev.launchAtStartup) {
+    try {
+      applyLoginItem(next.launchAtStartup);
+    } catch (err) {
+      log('error', `Could not update startup setting: ${err.message}`);
+      next.launchAtStartup = prev.launchAtStartup;
+    }
+  }
+  saveSettings(next);
+  return next;
+});
 ipcMain.handle('state:get', () => getState());
 ipcMain.handle('server:start', async (_e, s) => {
   try {
@@ -240,9 +256,101 @@ ipcMain.handle('qr:make', (_e, text) =>
   QRCode.toDataURL(text, { margin: 1, width: 240, color: { dark: '#0b1020', light: '#ffffff' } })
 );
 
+// ---------- launch at system startup ----------
+const HIDDEN_FLAG = '--hidden';
+const autostartFile = () => path.join(os.homedir(), '.config', 'autostart', 'lanshare-ftp.desktop');
+
+// Command that relaunches this exact build (AppImage, installed package, or dev checkout).
+function launchCommand() {
+  if (process.env.APPIMAGE) return [process.env.APPIMAGE];
+  if (app.isPackaged) return [process.execPath];
+  return [process.execPath, app.getAppPath(), '--no-sandbox'];
+}
+
+function applyLoginItem(enabled) {
+  if (process.platform === 'linux') {
+    const file = autostartFile();
+    if (!enabled) return fs.rmSync(file, { force: true });
+    // Desktop Entry Exec quoting: wrap in double quotes, escape " ` $ \
+    const q = (a) => (/[\s"'`$\\]/.test(a) ? `"${a.replace(/(["`$\\])/g, '\\$1')}"` : a);
+    const exec = [...launchCommand(), HIDDEN_FLAG].map(q).join(' ');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, [
+      '[Desktop Entry]',
+      'Type=Application',
+      'Name=LanShare FTP',
+      'Comment=Share files across your local network',
+      `Exec=${exec}`,
+      `Icon=${path.join(__dirname, 'renderer', 'icon.png')}`,
+      'Terminal=false',
+      'X-GNOME-Autostart-enabled=true',
+      '',
+    ].join('\n'));
+  } else {
+    const [exe, ...args] = launchCommand();
+    app.setLoginItemSettings({
+      openAtLogin: enabled,
+      openAsHidden: true, // macOS
+      path: exe, // Windows
+      args: [...args, HIDDEN_FLAG], // Windows
+    });
+  }
+}
+
+function launchedAtLogin() {
+  if (process.argv.includes(HIDDEN_FLAG)) return true;
+  if (process.platform === 'darwin') {
+    const s = app.getLoginItemSettings();
+    return !!(s.wasOpenedAtLogin || s.wasOpenedAsHidden);
+  }
+  return false;
+}
+
+// ---------- tray ----------
+let tray = null;
+let quitting = false;
+
+function showWindow() {
+  if (!win || win.isDestroyed()) createWindow(true);
+  else { win.show(); win.focus(); }
+}
+
+function createTray() {
+  try {
+    const icon = nativeImage
+      .createFromPath(path.join(__dirname, 'renderer', 'icon.png'))
+      .resize({ width: process.platform === 'darwin' ? 18 : 22 });
+    tray = new Tray(icon);
+    tray.setToolTip('LanShare FTP');
+    tray.on('click', showWindow);
+    updateTray();
+  } catch {
+    tray = null;
+  }
+}
+
+function updateTray() {
+  if (!tray) return;
+  const running = !!server;
+  const addr = lanAddresses()[0]?.address;
+  const port = loadSettings().port;
+  tray.setToolTip(running ? `LanShare FTP — running on ftp://${addr || 'localhost'}:${port}` : 'LanShare FTP — stopped');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: running ? `● Running — ftp://${addr || 'localhost'}:${port}` : '○ Server stopped', enabled: false },
+    { type: 'separator' },
+    { label: 'Open LanShare FTP', click: showWindow },
+    running
+      ? { label: 'Stop server', click: () => stopServer() }
+      : { label: 'Start server', click: () => startServer({}).catch((e) => log('error', e.message)) },
+    { type: 'separator' },
+    { label: 'Quit', click: () => { quitting = true; app.quit(); } },
+  ]));
+}
+
 // ---------- window ----------
-function createWindow() {
+function createWindow(show = true) {
   win = new BrowserWindow({
+    show: false,
     width: 1180,
     height: 780,
     minWidth: 980,
@@ -258,13 +366,47 @@ function createWindow() {
     },
   });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  if (show) win.once('ready-to-show', () => win.show());
+
+  // While sharing, closing the window keeps the server running in the tray.
+  win.on('close', (e) => {
+    if (!quitting && server && tray) {
+      e.preventDefault();
+      win.hide();
+    }
+  });
+  return win;
 }
 
-app.whenReady().then(createWindow);
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', showWindow);
+
+  app.whenReady().then(async () => {
+    const s = loadSettings();
+    // Refresh the startup entry in case the app was moved or updated.
+    if (s.launchAtStartup) {
+      try { applyLoginItem(true); } catch { /* ignore */ }
+    }
+    createTray();
+
+    const atLogin = launchedAtLogin();
+    // Launched at login: stay in the tray if we're going to share; otherwise show the window.
+    const startHidden = atLogin && s.autoStartServer && !!tray;
+    createWindow(!startHidden);
+
+    if (s.autoStartServer) {
+      win.webContents.once('did-finish-load', () => {
+        startServer({}).catch((err) => log('error', `Auto-start failed: ${err.message}`));
+      });
+    }
+  });
+}
+
+app.on('before-quit', () => { quitting = true; });
 app.on('window-all-closed', async () => {
   await stopServer();
   app.quit();
 });
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
-});
+app.on('activate', showWindow);

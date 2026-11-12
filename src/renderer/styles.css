@@ -171,7 +171,7 @@ body {
   100% { transform: scale(1.35); opacity: 0; }
 }
 
-.hero-text h2 { white-space: nowrap; font-size: 21px; font-weight: 700; letter-spacing: -0.4px; }
+.hero-text h2 { font-size: 21px; font-weight: 700; letter-spacing: -0.4px; }
 .hero-text p { font-size: 13px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
 .uptime {
   display: inline-block; margin-top: 10px;
@@ -246,7 +246,8 @@ body {
 /* ---------- settings ---------- */
 .settings { display: flex; flex-direction: column; gap: 16px; overflow-y: auto; }
 .settings .card-head { margin-bottom: 0; }
-.settings.locked .field, .settings.locked .toggle-row, .settings.locked .cred { opacity: 0.5; pointer-events: none; }
+.settings.locked .field, .settings.locked .toggle-row:not(.always), .settings.locked .cred { opacity: 0.5; pointer-events: none; }
+.section-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--faint); font-weight: 600; margin: 4px 0 -6px; }
 
 .badge {
   display: inline-flex; align-items: center; gap: 6px;
