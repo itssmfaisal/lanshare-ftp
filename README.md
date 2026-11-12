@@ -14,7 +14,9 @@ A desktop FTP server with a clean dark UI for sharing a folder with other device
 Website: https://lanshare-ftp.byteworkstation.online
 - **Launch at system startup**: starts in the background (system tray) when you log in
 - **Start sharing automatically**: starts the server as soon as the app opens
-- A system tray icon to start or stop the server. While sharing, closing the window keeps the server running in the tray; use **Quit** in the tray menu to exit.
+- A system tray icon to start or stop the server and to quit
+- **Keep running in the background:** if you close the window while sharing, the app asks whether to keep the server running in the background or stop it and quit. You can tick "Remember my choice" or change it later under *When I close the window*.
+- **Update notifications:** checks GitHub Releases at launch, every 6 hours, and when the internet comes back. When a new version is out, you get a notification, an in-app banner and a tray item that downloads the right installer for your system. You can skip a version or turn notifications off.
 
 ### Auto-start details
 | OS | How it's registered |

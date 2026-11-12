@@ -21,7 +21,13 @@
         <p>Share files across your local network</p>
       </div>
     </div>
+    <div class="top-right">
+    <button id="updateChip" class="update-chip hidden" title="A new version is available">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V8M6 14l6-6 6 6M5 4h14"/></svg>
+      <span id="updateChipText">Update</span>
+    </button>
     <div id="statusPill" class="status-pill off"><span class="dot"></span><span id="statusText">Offline</span></div>
+    </div>
   </header>
 
   <main class="grid">
@@ -120,7 +126,7 @@
         <label class="switch"><input type="checkbox" id="readOnly" /><span></span></label>
       </div>
 
-      <div class="section-label">Startup</div>
+      <div class="section-label">Startup &amp; updates</div>
 
       <div class="toggle-row always">
         <div>
@@ -137,6 +143,31 @@
         </div>
         <label class="switch"><input type="checkbox" id="autoStartServer" /><span></span></label>
       </div>
+
+      <div class="toggle-row always">
+        <div>
+          <div class="t-title">Update notifications</div>
+          <div class="t-sub">Tell me when a new version is released</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="updateNotifications" /><span></span></label>
+      </div>
+
+      <div class="toggle-row always">
+        <div>
+          <div class="t-title">When I close the window</div>
+          <div class="t-sub">What to do if the server is still running</div>
+        </div>
+        <select id="closeBehavior" class="select">
+          <option value="ask">Ask me</option>
+          <option value="background">Keep running</option>
+          <option value="quit">Stop &amp; quit</option>
+        </select>
+      </div>
+
+      <div class="version-row">
+        <span>Version <b id="appVersion">–</b></span>
+        <button class="link-btn" id="checkUpdatesBtn">Check for updates</button>
+      </div>
     </section>
 
     <!-- Clients -->
@@ -151,6 +182,29 @@
       <div id="logList" class="log-list"></div>
     </section>
   </main>
+
+  <div id="updateCard" class="update-card" role="dialog" aria-labelledby="updTitle">
+    <div class="upd-head">
+      <div class="upd-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V8M6 14l6-6 6 6M5 4h14"/></svg>
+      </div>
+      <div>
+        <div class="upd-title" id="updTitle">Update available</div>
+        <div class="upd-sub" id="updSub"></div>
+      </div>
+      <button class="upd-close" id="updLater" title="Remind me later">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="upd-actions">
+      <button class="btn primary" id="updDownload">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12M6 10l6 6 6-6M5 20h14"/></svg>
+        Download update
+      </button>
+      <button class="btn ghost" id="updNotes">What's new</button>
+    </div>
+    <button class="link-btn upd-skip" id="updSkip">Skip this version</button>
+  </div>
 
   <div id="toast" class="toast"></div>
   <script src="app.js"></script>

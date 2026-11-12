@@ -61,6 +61,8 @@ function readForm() {
     readOnly: $('readOnly').checked,
     launchAtStartup: $('launchAtStartup').checked,
     autoStartServer: $('autoStartServer').checked,
+    updateNotifications: $('updateNotifications').checked,
+    closeBehavior: $('closeBehavior').value,
   };
 }
 function fillForm() {
@@ -73,6 +75,8 @@ function fillForm() {
   $('readOnly').checked = settings.readOnly;
   $('launchAtStartup').checked = settings.launchAtStartup;
   $('autoStartServer').checked = settings.autoStartServer;
+  $('updateNotifications').checked = settings.updateNotifications !== false;
+  $('closeBehavior').value = settings.closeBehavior || 'ask';
   updateCredVisibility();
 }
 function updateCredVisibility() {
@@ -225,6 +229,81 @@ async function togglePower() {
   }
 }
 
+// ---------- updates ----------
+let currentUpdate = null;
+let laterVersion = null; // "Remind me later" hides the card for this session
+
+function fmtUpdateSub(u, current) {
+  const size = u.size ? ` · ${fmtBytes(u.size)}` : '';
+  return `Version ${u.version} is ready to download. You have ${current}.${size}`;
+}
+
+function showUpdate(info, { force = false } = {}) {
+  const u = info && info.update;
+  currentUpdate = u;
+  if (info && info.current) $('appVersion').textContent = info.current;
+  if (!u) {
+    $('updateChip').classList.add('hidden');
+    $('updateCard').classList.remove('show');
+    return;
+  }
+  $('updateChipText').textContent = `Update v${u.version}`;
+  $('updateChip').classList.remove('hidden');
+  $('updTitle').textContent = `LanShare FTP ${u.version} is available`;
+  $('updSub').textContent = fmtUpdateSub(u, info.current);
+  if (force || laterVersion !== u.version) $('updateCard').classList.add('show');
+}
+
+async function manualUpdateCheck() {
+  const btn = $('checkUpdatesBtn');
+  btn.disabled = true;
+  btn.textContent = 'Checking…';
+  try {
+    const r = await window.api.checkUpdates(true);
+    if (!r.ok) toast("Couldn't check for updates. Are you online?", true);
+    else if (!r.update) toast(`You're up to date (v${r.current})`);
+    else showUpdate(r, { force: true });
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Check for updates';
+  }
+}
+
+function initUpdates() {
+  window.api.getUpdate().then((info) => showUpdate(info));
+  window.api.onUpdate((info) => showUpdate(info));
+
+  $('updateChip').addEventListener('click', () => $('updateCard').classList.add('show'));
+  $('updLater').addEventListener('click', () => {
+    laterVersion = currentUpdate && currentUpdate.version;
+    $('updateCard').classList.remove('show');
+  });
+  $('updDownload').addEventListener('click', async () => {
+    await window.api.downloadUpdate();
+    toast('Download started in your browser. Install it to update.');
+    laterVersion = currentUpdate && currentUpdate.version;
+    $('updateCard').classList.remove('show');
+  });
+  $('updNotes').addEventListener('click', () => window.api.openReleaseNotes());
+  $('updSkip').addEventListener('click', async () => {
+    const v = currentUpdate && currentUpdate.version;
+    await window.api.skipUpdate();
+    showUpdate({ update: null });
+    toast(`Skipped version ${v}`);
+  });
+  $('checkUpdatesBtn').addEventListener('click', manualUpdateCheck);
+  $('updateNotifications').addEventListener('change', async () => {
+    await persist();
+    if (settings.updateNotifications) window.api.checkUpdates(false);
+    else showUpdate({ update: null });
+  });
+
+  // Internet came back: check right away
+  window.addEventListener('online', () => {
+    if (settings.updateNotifications !== false) window.api.checkUpdates(false);
+  });
+}
+
 // ---------- init ----------
 async function init() {
   document.querySelector('.settings').id = 'settingsCard';
@@ -260,6 +339,14 @@ async function init() {
     i.type = i.type === 'password' ? 'text' : 'password';
   });
   $('clearLog').addEventListener('click', clearLog);
+  initUpdates();
+  $('closeBehavior').addEventListener('change', async () => {
+    await persist();
+    const msg = { ask: "I'll ask what to do when you close the window", background: 'The server keeps running in the background when you close the window', quit: 'Closing the window stops the server' };
+    toast(msg[settings.closeBehavior]);
+  });
+  // e.g. "Remember my choice" in the close dialog
+  window.api.onSettings((s) => { settings = s; $('closeBehavior').value = s.closeBehavior || 'ask'; });
 
   window.api.onState(async (s) => {
     const changed = s.running !== state.running;

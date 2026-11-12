@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, Tray, Menu, nativeImage, Notification, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -24,6 +24,9 @@ const defaultSettings = () => ({
   readOnly: false,
   launchAtStartup: false,
   autoStartServer: false,
+  updateNotifications: true,
+  closeBehavior: 'ask', // 'ask' | 'background' | 'quit' (only applies while the server is running)
+  skippedVersion: null,
 });
 function loadSettings() {
   try {
@@ -252,9 +255,116 @@ ipcMain.handle('dialog:folder', async () => {
 });
 ipcMain.handle('folder:open', (_e, p) => shell.openPath(p));
 ipcMain.handle('clipboard:write', (_e, t) => clipboard.writeText(t));
+ipcMain.handle('update:check', (_e, manual) => checkForUpdates({ manual: !!manual }));
+ipcMain.handle('update:get', () => ({ current: app.getVersion(), update: availableUpdate }));
+ipcMain.handle('update:download', () => availableUpdate && shell.openExternal(availableUpdate.downloadUrl));
+ipcMain.handle('update:notes', () => availableUpdate && shell.openExternal(availableUpdate.releaseUrl));
+ipcMain.handle('update:skip', () => {
+  if (!availableUpdate) return;
+  saveSettings({ ...loadSettings(), skippedVersion: availableUpdate.version });
+  availableUpdate = null;
+  updateTray();
+});
+
 ipcMain.handle('qr:make', (_e, text) =>
   QRCode.toDataURL(text, { margin: 1, width: 240, color: { dark: '#0b1020', light: '#ffffff' } })
 );
+
+// ---------- update notifications ----------
+const RELEASES_API = 'https://api.github.com/repos/itssmfaisal/lanshare-ftp/releases/latest';
+const UPDATE_INTERVAL = 6 * 60 * 60 * 1000; // 6 hours
+const RETRY_INTERVAL = 30 * 60 * 1000; // after a failed check (e.g. offline)
+let availableUpdate = null; // { version, downloadUrl, releaseUrl, fileName, notes }
+let notifiedVersion = null;
+let updateTimer = null;
+let checking = null;
+
+const parseVersion = (v) => String(v).replace(/^v/i, '').split('-')[0].split('.').map((n) => parseInt(n, 10) || 0);
+function isNewer(latest, current) {
+  const a = parseVersion(latest), b = parseVersion(current);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+  }
+  return false;
+}
+
+// Choose the release file that matches how this copy was installed.
+function pickAsset(assets) {
+  const find = (re) => assets.find((a) => re.test(a.name));
+  if (process.platform === 'win32') {
+    return process.env.PORTABLE_EXECUTABLE_FILE ? find(/win-portable\.exe$/i) : find(/win-setup\.exe$/i);
+  }
+  if (process.platform === 'darwin') {
+    return process.arch === 'arm64' ? find(/mac-arm64\.dmg$/i) : find(/mac-x64\.dmg$/i);
+  }
+  if (process.env.APPIMAGE) return find(/\.AppImage$/i);
+  if (app.isPackaged && process.execPath.startsWith('/opt/')) return find(/\.deb$/i);
+  return find(/\.AppImage$/i);
+}
+
+function checkForUpdates({ manual = false } = {}) {
+  if (checking) return checking;
+  checking = (async () => {
+    try {
+      const res = await net.fetch(RELEASES_API, {
+        headers: { Accept: 'application/vnd.github+json', 'User-Agent': `LanShare-FTP/${app.getVersion()}` },
+      });
+      if (!res.ok) throw new Error(`GitHub responded ${res.status}`);
+      const rel = await res.json();
+      const version = String(rel.tag_name || '').replace(/^v/i, '');
+      const current = app.getVersion();
+      const settings = loadSettings();
+
+      if (!version || !isNewer(version, current) || (!manual && settings.skippedVersion === version)) {
+        availableUpdate = null;
+        updateTray();
+        send('update:state', { current, update: null });
+        return { ok: true, current, update: null };
+      }
+
+      const asset = pickAsset(rel.assets || []);
+      availableUpdate = {
+        version,
+        releaseUrl: rel.html_url,
+        downloadUrl: asset ? asset.browser_download_url : rel.html_url,
+        fileName: asset ? asset.name : null,
+        size: asset ? asset.size : null,
+        notes: (rel.body || '').slice(0, 2000),
+        publishedAt: rel.published_at,
+      };
+      updateTray();
+      send('update:state', { current, update: availableUpdate });
+
+      if (notifiedVersion !== version && (manual || settings.updateNotifications) && Notification.isSupported()) {
+        notifiedVersion = version;
+        const n = new Notification({
+          title: `LanShare FTP v${version} is available`,
+          body: `You're on v${current}. Click to see what's new and download the update.`,
+          icon: path.join(__dirname, 'renderer', 'icon.png'),
+        });
+        n.on('click', showWindow);
+        n.show();
+      }
+      return { ok: true, current, update: availableUpdate };
+    } catch (err) {
+      return { ok: false, current: app.getVersion(), error: err.message };
+    } finally {
+      checking = null;
+    }
+  })();
+  return checking;
+}
+
+function scheduleUpdateChecks(firstDelay = 8000) {
+  clearTimeout(updateTimer);
+  const run = async () => {
+    let ok = true;
+    if (loadSettings().updateNotifications) ok = (await checkForUpdates()).ok;
+    // Offline or GitHub unreachable: try again sooner. The renderer also re-checks when the network comes back.
+    updateTimer = setTimeout(run, ok ? UPDATE_INTERVAL : RETRY_INTERVAL);
+  };
+  updateTimer = setTimeout(run, firstDelay);
+}
 
 // ---------- launch at system startup ----------
 const HIDDEN_FLAG = '--hidden';
@@ -338,6 +448,7 @@ function updateTray() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: running ? `● Running — ftp://${addr || 'localhost'}:${port}` : '○ Server stopped', enabled: false },
     { type: 'separator' },
+    ...(availableUpdate ? [{ label: `⬆ Update available: v${availableUpdate.version} (download)`, click: () => shell.openExternal(availableUpdate.downloadUrl) }, { type: 'separator' }] : []),
     { label: 'Open LanShare FTP', click: showWindow },
     running
       ? { label: 'Stop server', click: () => stopServer() }
@@ -368,14 +479,68 @@ function createWindow(show = true) {
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   if (show) win.once('ready-to-show', () => win.show());
 
-  // While sharing, closing the window keeps the server running in the tray.
+  // Closing the window while sharing: ask (or follow the remembered choice).
   win.on('close', (e) => {
-    if (!quitting && server && tray) {
-      e.preventDefault();
-      win.hide();
-    }
+    if (quitting || !server) return; // not sharing: close normally
+    const behavior = loadSettings().closeBehavior;
+    if (behavior === 'quit') return; // window-all-closed stops the server and quits
+    e.preventDefault();
+    if (behavior === 'background') return goToBackground();
+    askCloseBehavior();
   });
   return win;
+}
+
+let closePromptOpen = false;
+async function askCloseBehavior() {
+  if (closePromptOpen) return;
+  closePromptOpen = true;
+  try {
+    const n = clients.size;
+    const { response, checkboxChecked } = await dialog.showMessageBox(win, {
+      type: 'question',
+      title: 'LanShare FTP',
+      message: 'Keep the FTP server running in the background?',
+      detail:
+        (n ? `${n} device${n > 1 ? 's are' : ' is'} connected right now. ` : '') +
+        'LanShare FTP can keep sharing your folder after you close this window. ' +
+        (tray ? 'You can reopen it or stop the server from the system tray icon.' : 'Open LanShare FTP again to bring the window back.'),
+      buttons: ['Keep running in background', 'Stop server and quit', 'Cancel'],
+      defaultId: 0,
+      cancelId: 2,
+      checkboxLabel: 'Remember my choice',
+      noLink: true,
+    });
+    if (response === 2) return;
+    const choice = response === 0 ? 'background' : 'quit';
+    if (checkboxChecked) {
+      const next = { ...loadSettings(), closeBehavior: choice };
+      saveSettings(next);
+      send('settings:changed', next);
+    }
+    if (choice === 'background') goToBackground();
+    else { quitting = true; app.quit(); }
+  } finally {
+    closePromptOpen = false;
+  }
+}
+
+let backgroundNoticeShown = false;
+function goToBackground() {
+  win.hide();
+  if (!backgroundNoticeShown && Notification.isSupported()) {
+    backgroundNoticeShown = true;
+    const n = new Notification({
+      title: 'LanShare FTP is still sharing',
+      body: tray
+        ? 'The FTP server keeps running in the background. Use the tray icon to open it or stop sharing.'
+        : 'The FTP server keeps running in the background. Open LanShare FTP again to bring the window back.',
+      icon: path.join(__dirname, 'renderer', 'icon.png'),
+      silent: true,
+    });
+    n.on('click', showWindow);
+    n.show();
+  }
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -390,6 +555,7 @@ if (!app.requestSingleInstanceLock()) {
       try { applyLoginItem(true); } catch { /* ignore */ }
     }
     createTray();
+    scheduleUpdateChecks();
 
     const atLogin = launchedAtLogin();
     // Launched at login: stay in the tray if we're going to share; otherwise show the window.
