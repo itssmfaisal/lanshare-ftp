@@ -145,9 +145,10 @@ code {
 .section-head h2 { font-size: clamp(28px, 4vw, 42px); letter-spacing: -1.2px; line-height: 1.15; margin: 10px 0 12px; }
 .section-head p { color: var(--muted); font-size: 16.5px; }
 
-.features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.features { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+@media (max-width: 1100px) { .features { grid-template-columns: repeat(2, 1fr); } }
 .feature {
-  padding: 26px; border-radius: 18px;
+  padding: 24px; border-radius: 18px;
   background: var(--card); border: 1px solid var(--border);
   transition: transform 0.25s, border-color 0.25s, background 0.25s;
 }

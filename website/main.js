@@ -69,5 +69,5 @@
       document.getElementById('versionPill').textContent = `${v} is out · Free & open source`;
       updateHero();
     })
-    .catch(() => { /* keep the built-in v1.1.0 links */ });
+    .catch(() => { /* keep the built-in v1.2.0 links */ });
 })();
